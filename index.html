@@ -121,7 +121,7 @@ select.una{border-color:var(--alert);color:var(--alert);font-weight:700}
 <body>
 <div class="app">
   <header>
-    <div class="titlerow"><h1>ガソリン集計システム <span class="v">v0.2</span></h1><span class="ctx" id="ctx">大塚石油 / どっと原価むけ</span></div>
+    <div class="titlerow"><h1>ガソリン集計システム <span class="v">v0.2</span></h1><span id="ymBadge" style="display:none;margin-left:12px;padding:4px 12px;border-radius:999px;background:var(--accent,#2563eb);color:#fff;font-size:13px;font-weight:700;white-space:nowrap"></span><span class="ctx" id="ctx">大塚石油 / どっと原価むけ</span></div>
     <div class="steps" id="steps">
       <button data-tab="t1" class="on"><span class="n">1</span>書類アップロード</button>
       <button data-tab="t2"><span class="n">2</span>解析・工事割当 <span class="chip" id="chipNeed" style="display:none"></span></button>
@@ -361,6 +361,8 @@ function saveRows(){lsSet(LS.rows,rows);}
 /* 月別集計：処理した月を {年月:{工事:{tax,kei}}} でためる */
 let months=lsGet(LS.months,{});
 let currentYm='2026-09';
+/* 画面上部の「表示中：○年○月分」バッジを更新 */
+function setYmBadge(ym){ const el=$('ymBadge'); if(!el)return; if(ym&&/^\d{4}-\d{2}$/.test(ym)){ el.textContent='表示中：'+ym.slice(0,4)+'年'+parseInt(ym.slice(5),10)+'月分'; el.style.display=''; } else { el.style.display='none'; } }
 /* 取込データの日付から対象年月を自動判定（最頻月）。年は日付に無ければ現在欄の年を使う */
 function detectYm(data){
   const cnt={};
@@ -432,13 +434,14 @@ $('sampleBtn').onclick=loadSample;
 function loadDataset(data, opt){
   rows=data.map(norm);
   saveRows();
-  if(!opt.sample){ const dy=(opt.ym&&/^\d{4}-\d{2}$/.test(opt.ym))?opt.ym:detectYm(data); currentYm=dy||(($('ymInput')||{}).value)||currentYm; if($('ymInput'))$('ymInput').value=currentYm; saveMonth(); }   // 請求書の対象年月(opt.ym)を優先・無ければ行の日付から判定
+  if(!opt.sample){ const dy=(opt.ym&&/^\d{4}-\d{2}$/.test(opt.ym))?opt.ym:detectYm(data); currentYm=dy||(($('ymInput')||{}).value)||currentYm; if($('ymInput'))$('ymInput').value=currentYm; setYmBadge(currentYm); saveMonth(); }   // 請求書の対象年月(opt.ym)を優先・無ければ行の日付から判定
   $('ctx').textContent=opt.ctx;
   if(opt.sample) showSampleNote(); else showKenzan(opt.check);
   drawDetail(); drawAgg();
   const need=rows.filter(r=>r.koji==='要確認').length;
   const label=opt.sample?'（サンプル・完成イメージ）':(opt.check?'（請求書と検算一致）':'（読み込み）');
-  $('status').innerHTML='✅ '+rows.length+'件を読み込みました'+label+'。要確認 '+need+' 件'+(need?' → STEP2で割当してください。':'（全部の給油に工事が付いています）。');
+  const ymJp=(!opt.sample&&/^\d{4}-\d{2}$/.test(currentYm))?('<b>'+currentYm.slice(0,4)+'年'+parseInt(currentYm.slice(5),10)+'月分</b>（請求書の締め日から自動判定）　'):'';
+  $('status').innerHTML='✅ '+ymJp+rows.length+'件を読み込みました'+label+'。要確認 '+need+' 件'+(need?' → STEP2で割当してください。':'（全部の給油に工事が付いています）。');
   document.querySelector('[data-tab="t2"]').click();
 }
 function loadDemo(){ loadDataset(SEP_DOBOKU, {ctx:'大塚石油 2026/9 土木（AI読取・実データ85件）', sample:false, check:SEP_CHECK, ym:'2026-09'}); }  /* ym=請求書の対象年月 */
@@ -539,10 +542,10 @@ $('importBtn').onclick=()=>{
 
 /* 月別データのクリア・対象年月 */
 $('monthsClear').onclick=()=>{ if(confirm('ためた月別データを全部消しますか？')){ months={}; lsSet(LS.months,months); drawMonths(); } };
-$('ymInput').onchange=()=>{ currentYm=$('ymInput').value||currentYm; };
+$('ymInput').onchange=()=>{ currentYm=$('ymInput').value||currentYm; setYmBadge(currentYm); if(rows.length)saveMonth(); };
 
 /* ===== 起動時：前回の続きを復元 ===== */
-(function restore(){ const r=lsGet(LS.rate,null); if(r)$('rate').value=r; const saved=lsGet(LS.rows,null); if(saved&&saved.length){ rows=saved.map(r=>({...carInfo(r.car), ...r, cat:(r.cat&&!/不明|undefined/.test(String(r.cat)))?r.cat:carInfo(r.car).cat, dept:r.dept||carInfo(r.car).dept, person:r.person||carInfo(r.car).person})); $('ctx').textContent='保存データ（前回の続き）'; showKenzan(null); drawDetail(); drawAgg(); } })();
+(function restore(){ const r=lsGet(LS.rate,null); if(r)$('rate').value=r; const saved=lsGet(LS.rows,null); if(saved&&saved.length){ rows=saved.map(r=>({...carInfo(r.car), ...r, cat:(r.cat&&!/不明|undefined/.test(String(r.cat)))?r.cat:carInfo(r.car).cat, dept:r.dept||carInfo(r.car).dept, person:r.person||carInfo(r.car).person})); $('ctx').textContent='保存データ（前回の続き）'; const ry=detectYm(rows); if(ry){currentYm=ry; if($('ymInput'))$('ymInput').value=ry;} setYmBadge(currentYm); showKenzan(null); drawDetail(); drawAgg(); } })();
 
 /* 共有（埋め込みGAS）：UIは出さず裏側で同期。起動時に最新を取得 */
 if(gasUrl()) gasLoad();
