@@ -16,9 +16,9 @@
   --kei:#6fb5e6; --keibg:#122634; --yellow:#1c2030; --head:#0f2a22;
 }}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1aa.6 -apple-system,"Hiragino Kaku Gothic ProN",system-ui,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,"Hiragino Kaku Gothic ProN",system-ui,sans-serif}
 .app{max-width:1180px;margin:0 auto;padding:0 16px 70px}
-header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:saturate(1.6) blur(8px);padding:16px a0 0;margin:0 -16px 0;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
+header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:saturate(1.6) blur(8px);padding:16px 0 0;margin:0 -16px 0;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
 .titlerow{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
 h1{font-size:18px;margin:0;letter-spacing:.01em}
 h1 .v{font-size:11px;font-weight:600;color:var(--sub)}
@@ -379,9 +379,10 @@ function drawCat(){
   const tbl=(title,arr)=>{ const tot=arr.reduce((s,x)=>s+x[1],0); return `<div class="card" style="margin-bottom:12px"><h2 style="font-size:13px;margin:0 0 8px">${title}</h2><table style="width:100%"><tbody>`+arr.map(x=>`<tr${/要確認/.test(x[0])?' class="una"':''}><td class="l" style="padding:5px 8px;border-bottom:1px solid var(--line)">${x[0]}</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right"><b>¥${yen(x[1])}</b></td></tr>`).join('')+`<tr><td class="l" style="padding:6px 8px;border-top:2px solid var(--line)"><b>合計</b></td><td style="padding:6px 8px;border-top:2px solid var(--line);text-align:right"><b>¥${yen(tot)}</b></td></tr></tbody></table></div>`; };
   const perG={}; rows.forEach(r=>{ const p=r.person||'（不明）'; if(!perG[p])perG[p]={amt:0,cars:{}}; perG[p].amt+=r.amt; if(r.car&&r.car!=='—')perG[p].cars[r.car]=1; });
   const perArr=Object.entries(perG).sort((a,b)=>b[1].amt-a[1].amt), perTot=perArr.reduce((s,x)=>s+x[1].amt,0);
-  const perTbl=`<div class="card" style="margin-bottom:12px"><h2 style="font-size:13px;margin:0 0 8px">人別（管理者）</h2><table style="width:100%"><tbody>`
-    +perArr.map(([p,v])=>`<tr${/不明/.test(p)?' class="una"':''}><td class="l" style="padding:5px 8px;border-bottom:1px solid var(--line)">${p}<span class="denpyo" style="margin-left:6px">車 ${Object.keys(v.cars).join('・')||'—'}</span></td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right"><b>¥${yen(v.amt)}</b></td></tr>`).join('')
-    +`<tr><td class="l" style="padding:6px 8px;border-top:2px solid var(--line)"><b>合計</b></td><td style="padding:6px 8px;border-top:2px solid var(--line);text-align:right"><b>¥${yen(perTot)}</b></td></tr></tbody></table></div>`;
+  const perTbl=`<div class="card" style="margin-bottom:12px"><h2 style="font-size:13px;margin:0 0 8px">人別（管理者）</h2><table style="width:100%">`
+    +`<thead><tr><th class="l" style="padding:4px 8px;font-size:10.5px;color:var(--sub);border-bottom:1px solid var(--line)">管理者</th><th class="l" style="padding:4px 8px;font-size:10.5px;color:var(--sub);border-bottom:1px solid var(--line)">ナンバー</th><th style="padding:4px 8px;font-size:10.5px;color:var(--sub);border-bottom:1px solid var(--line);text-align:right">金額</th></tr></thead><tbody>`
+    +perArr.map(([p,v])=>`<tr${/不明/.test(p)?' class="una"':''}><td class="l" style="padding:5px 8px;border-bottom:1px solid var(--line)">${p}</td><td class="l" style="padding:5px 8px;border-bottom:1px solid var(--line)">${Object.keys(v.cars).join('・')||'—'}</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right"><b>¥${yen(v.amt)}</b></td></tr>`).join('')
+    +`<tr><td class="l" style="padding:6px 8px;border-top:2px solid var(--line)"><b>合計</b></td><td style="border-top:2px solid var(--line)"></td><td style="padding:6px 8px;border-top:2px solid var(--line);text-align:right"><b>¥${yen(perTot)}</b></td></tr></tbody></table></div>`;
   $('catBox').innerHTML = tbl('カテゴリ別（計上先）', by('cat')) + tbl('部門別', by('dept')) + perTbl;
 }
 function drawMonths(){
