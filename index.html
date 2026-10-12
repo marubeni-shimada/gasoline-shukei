@@ -17,7 +17,7 @@
 }}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,"Hiragino Kaku Gothic ProN",system-ui,sans-serif}
-.app{max-width:1180px;margin:0 auto;padding:0 16px 70px}a
+.app{max-width:1180px;margin:0 auto;padding:0 16px 70px}
 header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:saturate(1.6) blur(8px);padding:16px 0 0;margin:0 -16px 0;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
 .titlerow{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
 h1{font-size:18px;margin:0;letter-spacing:.01em}
@@ -156,21 +156,6 @@ select.una{border-color:var(--alert);color:var(--alert);font-weight:700}
     <div class="card" id="kenzanCard" style="display:none">
       <h2>読取の検算（請求書と一致するか）</h2>
       <div class="kenzan" id="kenzan"></div>
-    </div>
-    <div class="card">
-      <h2>共有設定（GAS）<span class="status" id="gasState" style="margin-left:8px;display:none"></span></h2>
-      <p class="lead">GASのURLを貼ると、<b>月別集計と工事リストをチームで共有</b>（他の端末・他の人と同じ年間集計を見られる）。空ならこの端末だけに保存。</p>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input id="gasUrlInput" type="url" placeholder="https://script.google.com/macros/s/……/exec" style="flex:1;min-width:260px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--yellow);color:var(--ink);font:inherit;font-size:12.5px">
-        <button class="btn primary" id="gasSaveUrl">接続</button>
-        <button class="btn" id="gasReload">最新を取得</button>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
-        <span class="status">工事を追加（共有リストへ）</span>
-        <input id="kojiAdd" type="text" placeholder="例：新清水立体" style="min-width:180px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--yellow);color:var(--ink);font:inherit;font-size:12.5px">
-        <button class="btn" id="kojiAddBtn">＋ 追加</button>
-      </div>
-      <p class="foot" style="font-size:11px;color:var(--sub);margin-top:8px">GASの作り方＝<code>pages/ガソリン集計_GAS_2026-10-12.gs.txt</code> の手順。デプロイ→/exec取得→上に貼る。</p>
     </div>
   </section>
 
@@ -514,12 +499,7 @@ $('ymInput').onchange=()=>{ currentYm=$('ymInput').value||currentYm; };
 /* ===== 起動時：前回の続きを復元 ===== */
 (function restore(){ const r=lsGet(LS.rate,null); if(r)$('rate').value=r; const saved=lsGet(LS.rows,null); if(saved&&saved.length){ rows=saved; $('ctx').textContent='保存データ（前回の続き）'; showKenzan(null); drawDetail(); drawAgg(); } })();
 
-/* 共有設定のUI */
-(function(){ const ui=$('gasUrlInput'); if(ui) ui.value=gasUrl(); if(gasUrl())gasPill('☁ 共有中','ok'); })();
-$('gasSaveUrl').onclick=()=>{ const v=($('gasUrlInput').value||'').trim(); lsSet('gas_url',v); if(v){ gasLoad(); } else { gasPill('（この端末のみ）',''); } };
-$('gasReload').onclick=()=>{ if(gasUrl())gasLoad(); else alert('先にGASのURLを貼って「接続」してください。'); };
-$('kojiAddBtn').onclick=()=>{ const v=($('kojiAdd').value||'').trim(); if(!v)return; if(KOJI.indexOf(v)<0&&kojiCustom.indexOf(v)<0){ kojiCustom.push(v); scheduleGasSave(); if(rows.length)drawDetail(); } $('kojiAdd').value=''; };
-/* 起動時：共有があれば最新を取得 */
+/* 共有（埋め込みGAS）：UIは出さず裏側で同期。起動時に最新を取得 */
 if(gasUrl()) gasLoad();
 </script>
 </body>
