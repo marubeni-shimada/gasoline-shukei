@@ -140,7 +140,7 @@ select.una{border-color:var(--alert);color:var(--alert);font-weight:700}
         <div class="drop" id="dropSlip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg><span class="big">伝票PDF（請求書添付用）</span><span class="sm" id="slipName">例：お）大塚石油_土木伝票2026.9.30.pdf</span></div>
       </div>
       <div class="analyze">
-        <label class="status" style="display:flex;align-items:center;gap:6px">対象年月 <input id="ymInput" value="2026-09" style="width:94px;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--yellow);color:var(--ink);font:inherit"></label>
+        <label class="status" style="display:flex;align-items:center;gap:6px">対象年月 <input id="ymInput" value="2026-09" title="請求書の締め日の月で自動判定します（例：9/30末締め→2026-09）。違う場合だけ直してください" style="width:94px;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--yellow);color:var(--ink);font:inherit"><span class="muted" style="font-size:10.5px">請求書の締め日から自動</span></label>
         <button class="btn primary lg" id="analyzeBtn">🤖 解析する</button>
         <button class="btn" id="sampleBtn">サンプルで見る（完成イメージ）</button>
         <button class="btn" id="demoBtn">テストデータ読込（2026/9 土木 実データ）</button>
@@ -361,6 +361,13 @@ function saveRows(){lsSet(LS.rows,rows);}
 /* 月別集計：処理した月を {年月:{工事:{tax,kei}}} でためる */
 let months=lsGet(LS.months,{});
 let currentYm='2026-09';
+/* 取込データの日付から対象年月を自動判定（最頻月）。年は日付に無ければ現在欄の年を使う */
+function detectYm(data){
+  const cnt={};
+  (data||[]).forEach(r=>{ const m=String(r.d||'').match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})|(\d{1,2})[\/\-](\d{1,2})/); if(!m)return; let y,mo; if(m[1]){y=m[1];mo=m[2];}else{mo=m[4];} if(!mo)return; const key=(y?y:null)+'|'+String(parseInt(mo,10)).padStart(2,'0'); cnt[key]=(cnt[key]||0)+1; });
+  const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0]; if(!top)return null;
+  const [yy,mm]=top[0].split('|'); const year=(yy&&yy!=='null')?yy:(($('ymInput')||{}).value||currentYm).slice(0,4); return year+'-'+mm;
+}
 function saveMonth(){ if(!rows.length)return; const g={}; rows.forEach(r=>{const k=(r.f==='k'?r.keiL:0)*(parseFloat((document.getElementById('rate')||{}).value)||15); if(!g[r.koji])g[r.koji]={tax:0,kei:0}; g[r.koji].tax+=r.amt-k; g[r.koji].kei+=k;}); months[currentYm]=g; lsSet(LS.months,months); scheduleGasSave(); }
 /* ===== 共有（GAS）：月別集計＋工事リストをチームで共有 ===== */
 const DEFAULT_GAS_URL='https://script.google.com/macros/s/AKfycbwrht7h1P3SFE_7YSvw9ahZHbf7i7fxOLPrai1ckhq0gxn65bG88EiQBbBb2T2utqykjw/exec';   // 共有GAS（デプロイ済・全員つながる）
@@ -425,7 +432,7 @@ $('sampleBtn').onclick=loadSample;
 function loadDataset(data, opt){
   rows=data.map(norm);
   saveRows();
-  if(!opt.sample){ currentYm=(($('ymInput')||{}).value)||currentYm; saveMonth(); }   // 月別集計にためる
+  if(!opt.sample){ const dy=(opt.ym&&/^\d{4}-\d{2}$/.test(opt.ym))?opt.ym:detectYm(data); currentYm=dy||(($('ymInput')||{}).value)||currentYm; if($('ymInput'))$('ymInput').value=currentYm; saveMonth(); }   // 請求書の対象年月(opt.ym)を優先・無ければ行の日付から判定
   $('ctx').textContent=opt.ctx;
   if(opt.sample) showSampleNote(); else showKenzan(opt.check);
   drawDetail(); drawAgg();
@@ -434,7 +441,7 @@ function loadDataset(data, opt){
   $('status').innerHTML='✅ '+rows.length+'件を読み込みました'+label+'。要確認 '+need+' 件'+(need?' → STEP2で割当してください。':'（全部の給油に工事が付いています）。');
   document.querySelector('[data-tab="t2"]').click();
 }
-function loadDemo(){ loadDataset(SEP_DOBOKU, {ctx:'大塚石油 2026/9 土木（AI読取・実データ85件）', sample:false, check:SEP_CHECK}); }
+function loadDemo(){ loadDataset(SEP_DOBOKU, {ctx:'大塚石油 2026/9 土木（AI読取・実データ85件）', sample:false, check:SEP_CHECK, ym:'2026-09'}); }  /* ym=請求書の対象年月 */
 function loadSample(){ loadDataset(SAMPLE_DEMO, {ctx:'サンプル（架空データ・完成イメージ）', sample:true}); }
 function showSampleNote(){
   $('kenzanCard').style.display='';
@@ -518,11 +525,14 @@ $('copy').onclick=()=>{   // 反映用サマリ：工事×科目
 
 /* ===== 月次データ読込（JSON貼付） ===== */
 $('importBtn').onclick=()=>{
-  let data; try{ data=JSON.parse($('importTxt').value); }catch(e){ alert('JSONの形式が正しくありません。'); return; }
-  if(!Array.isArray(data)||!data.length){ alert('配列のJSONを貼ってください。例は入力欄のプレースホルダ参照。'); return; }
+  let parsed; try{ parsed=JSON.parse($('importTxt').value); }catch(e){ alert('JSONの形式が正しくありません。'); return; }
+  /* 配列そのまま、または {ym:"2026-09", rows:[...]} の形（ym=請求書の対象年月）どちらも可 */
+  const invYm=(!Array.isArray(parsed)&&parsed&&parsed.ym)?String(parsed.ym):null;
+  const data=Array.isArray(parsed)?parsed:(parsed&&Array.isArray(parsed.rows)?parsed.rows:null);
+  if(!Array.isArray(data)||!data.length){ alert('配列のJSON、または {"ym":"2026-09","rows":[...]} を貼ってください。'); return; }
   const it={g:'ガソリン',k:'軽油',o:'オイル',w:'用品'};
   const d2=data.map(x=>({car:String(x.car||'—'),d:x.d||'',f:x.f||'g',it:x.it||it[x.f]||'ガソリン',L:+x.L||0,amt:+x.amt||0,koji:x.koji||'要確認',dp:x.dp||''}));
-  loadDataset(d2, {ctx:'読込データ（'+d2.length+'件）', sample:false});
+  loadDataset(d2, {ctx:'読込データ（'+d2.length+'件）', sample:false, ym:invYm});
 };
 
 /* ===== 学習マスタ（車→工事） ===== */
