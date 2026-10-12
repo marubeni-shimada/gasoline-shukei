@@ -19,7 +19,7 @@
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,"Hiragino Kaku Gothic ProN",system-ui,sans-serif}
 .app{max-width:1180px;margin:0 auto;padding:0 16px 70px}
 header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:saturate(1.6) blur(8px);padding:16px 0 0;margin:0 -16px 0;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
-.titlerow{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.titlerow{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}a
 h1{font-size:18px;margin:0;letter-spacing:.01em}
 h1 .v{font-size:11px;font-weight:600;color:var(--sub)}
 .titlerow .ctx{font-size:12px;color:var(--sub);margin-left:auto}
@@ -164,6 +164,7 @@ select.una{border-color:var(--alert);color:var(--alert);font-weight:700}
     <div class="subtabs" id="t2sub">
       <button data-sub="meisai" class="on">給油明細（工事割当）</button>
       <button data-sub="list">工事一覧（月別）</button>
+      <button data-sub="cat">部門・人・カテゴリ別</button>
     </div>
     <div class="subview on" id="sub-meisai">
     <div class="toolbar">
@@ -183,6 +184,10 @@ select.una{border-color:var(--alert);color:var(--alert);font-weight:700}
     <div class="subview" id="sub-list">
       <div class="toolbar"><span class="muted">工事ごとの月別集計（処理した月がたまっていきます。金額＝燃料費＋軽油引取税の合計）</span><button class="btn" id="monthsClear" style="margin-left:auto;padding:5px 11px;font-size:11.5px">月データを消す</button></div>
       <div class="card"><div id="monthsBox"><div class="empty">まだ月データがありません。STEP1で月を読み込むとたまります。</div></div></div>
+    </div>
+    <div class="subview" id="sub-cat">
+      <div class="toolbar"><span class="muted">車番から自動判定した 部門・管理者（誰）・カテゴリ（計上先）別の集計（今読み込んでいるデータ）</span></div>
+      <div id="catBox"><div class="empty">STEP1で読み込むと集計が出ます</div></div>
     </div>
   </section>
 
@@ -309,6 +314,23 @@ const KOJI=["要確認","谷口中河線","リニア","駿遠島田","業務ス�
 let kojiCustom=[];   // 共有(GAS)で足した工事名。ドロップダウンに合流
 function allKoji(){ return KOJI.concat(kojiCustom.filter(k=>k&&KOJI.indexOf(k)<0)); }
 
+/* ===== 社有車マスタ（車番→所属・管理者）。カテゴリ＝計上先を自動判定 ===== */
+const CARMASTER={
+ 3330:["土木部","(土木部)"],787:["土木部","(土木部)"],9052:["土木部","(土木部)"],3294:["土木部","(土木部)"],
+ 88:["社長","紅林眞実"],683:["営業部","共有車"],9067:["営業部","益田桂志"],7356:["営業部","山崎大介"],
+ 3183:["営業部","鈴木悠仁"],5637:["営業部","川井大輔"],5075:["土木部","駒井聡"],6787:["土木部","福代紘大"],
+ 7521:["土木部","又平清悟"],7688:["土木部","赤堀竜輝"],7378:["土木部","青木紀雄"],5819:["土木部","三浦剛"],
+ 8593:["総務部","中森貴道子"],2202:["総務部","紅林優輝子"],6894:["営業部","川井大輔"],7123:["営業部","池田昭二"],
+ 3288:["営業部","青島秀和"],8574:["営業部","小林徹也"],1485:["土木部","栗下功"],1736:["土木部","大石夕貴"],
+ 7124:["土木部","菊地亮太"],5951:["土木部","吉田辰弥"],8479:["土木部","前嶋翔"],1486:["土木部","中川龍之介"],
+ 1525:["土木部","田中邦武"],3015:["土木部","石田優成"],6537:["土木部","青木藍華"],999:["土木部","王敬亮"],
+ 8638:["土木部","加藤裕之"],5124:["土木部","コイル"],3611:["土木部","ジョシャ"],4912:["土木部","田中幸裕"],
+ 6560:["土木部","尾白啓太"],5198:["土木部","山城康輔"],7225:["土木部","後藤長武"],7987:["土木部","松島慎吾"],
+ 902:["土木部","法月晴良"],5199:["土木部","漆畑武士"],3299:["総務部","紅林眞実"]
+};
+function catOfDept(d){ return d==='営業部'?'営業費':(d==='総務部'||d==='社長')?'社内経費':d==='土木部'?'工事原価':'要確認(車未登録)'; }
+function carInfo(car){ if(car==='—'||car===''||car==null) return {dept:'土木部',person:'現場直',cat:'工事原価'}; const n=parseInt(String(car).replace(/\D/g,''),10); const m=CARMASTER[n]; if(m) return {dept:m[0],person:m[1],cat:catOfDept(m[0])}; return {dept:'',person:'',cat:'要確認(車未登録)'}; }
+
 /* ===== サンプル（架空データ・完成イメージ）：全明細に工事が付いた“こうなる”状態 ===== */
 const SAMPLE_DEMO=[
  {car:"101",d:"09/03",f:"g",it:"ガソリン",L:30.00,amt:4440,koji:"駿遠島田",dp:"伝票:駿遠島田"},
@@ -328,7 +350,7 @@ const kei=r=>(r.f==='k'?r.keiL:0)*rate();
 // keiL補完
 /* 読取の確度：high=確実（自動で工事付与）／low=候補あり不確実／none=読取不可。low・noneは要確認に回す（＝OCRで読めなければ要確認）。実装版Geminiは確度を返す想定、未指定はここで推定 */
 function confOf(r){ if(r.conf) return r.conf; if(r.koji && r.koji!=='要確認') return 'high'; return (r.dp && /[?？]/.test(r.dp)) ? 'low' : 'none'; }
-function norm(r){ const c=confOf(r); return {...r, keiL:(r.f==='k'?r.L:0), conf:c, koji:(c==='high'?(r.koji||'要確認'):'要確認')}; }
+function norm(r){ const c=confOf(r); const ci=carInfo(r.car); return {...r, keiL:(r.f==='k'?r.L:0), conf:c, koji:(c==='high'?(r.koji||'要確認'):'要確認'), dept:ci.dept, person:ci.person, cat:ci.cat}; }
 
 /* ===== 保存・学習（localStorage。端末内。財務データは数値のみ） ===== */
 const LS={cm:'gas_carmaster', rows:'gas_rows', rate:'gas_rate', months:'gas_months'};
@@ -351,6 +373,12 @@ function gasSave(){ const u=gasUrl(); if(!u)return; gasPill('☁ 保存中…','
 function gasLoad(){ const u=gasUrl(); if(!u)return; gasPill('☁ 読込中…','');
   fetch(u).then(r=>r.json()).then(o=>{ if(o&&o.ok&&o.data){ if(o.data.months&&typeof o.data.months==='object'){months=o.data.months;lsSet(LS.months,months);} if(Array.isArray(o.data.kojiList))kojiCustom=o.data.kojiList; gasPill('☁ 共有中（最新）','ok'); drawMonths(); if(rows.length)drawDetail(); } else gasPill('☁ 接続（データなし）',''); }).catch(()=>gasPill('⚠ 接続エラー','bad')); }
 function gasPill(t,cls){ const e=$('gasState'); if(e){ e.style.display=''; e.textContent=t; e.style.color=cls==='ok'?'var(--acc)':cls==='bad'?'var(--alert)':'var(--sub)'; } }
+function drawCat(){
+  if(!rows.length){ $('catBox').innerHTML='<div class="empty">データがありません</div>'; return; }
+  const by=(key)=>{ const g={}; rows.forEach(r=>{ const k=r[key]||'（不明）'; g[k]=(g[k]||0)+r.amt; }); return Object.entries(g).sort((a,b)=>b[1]-a[1]); };
+  const tbl=(title,arr)=>{ const tot=arr.reduce((s,x)=>s+x[1],0); return `<div class="card" style="margin-bottom:12px"><h2 style="font-size:13px;margin:0 0 8px">${title}</h2><table style="width:100%"><tbody>`+arr.map(x=>`<tr${/要確認/.test(x[0])?' class="una"':''}><td class="l" style="padding:5px 8px;border-bottom:1px solid var(--line)">${x[0]}</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right"><b>¥${yen(x[1])}</b></td></tr>`).join('')+`<tr><td class="l" style="padding:6px 8px;border-top:2px solid var(--line)"><b>合計</b></td><td style="padding:6px 8px;border-top:2px solid var(--line);text-align:right"><b>¥${yen(tot)}</b></td></tr></tbody></table></div>`; };
+  $('catBox').innerHTML = tbl('カテゴリ別（計上先）', by('cat')) + tbl('部門別', by('dept')) + tbl('人別（管理者）', by('person'));
+}
 function drawMonths(){
   const yms=Object.keys(months).sort();
   if(!yms.length){ $('monthsBox').innerHTML='<div class="empty">まだ月データがありません。STEP1で月を読み込むとたまります。</div>'; return; }
@@ -376,6 +404,7 @@ $('t2sub').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   document.querySelectorAll('#t2sub button').forEach(x=>x.classList.toggle('on',x===b));
   document.querySelectorAll('#t2 .subview').forEach(v=>v.classList.toggle('on',v.id==='sub-'+b.dataset.sub));
   if(b.dataset.sub==='list')drawMonths();
+  if(b.dataset.sub==='cat')drawCat();
 };
 
 /* ===== STEP1 ===== */
@@ -431,7 +460,7 @@ function drawDetail(){
   const only=$('onlyNeed').checked;
   const list=rows.map((r,i)=>({r,i})).filter(x=>!only||x.r.koji==='要確認');
   $('tb').innerHTML=list.map(({r,i})=>`<tr class="${r.koji==='要確認'?'una':''}">
-    <td class="c">${r.car}</td><td class="c">${r.d}</td>
+    <td class="c">${r.car}${r.person&&r.person!=='現場直'&&!/\(/.test(r.person)?`<div class="denpyo">${r.person}</div>`:''}${r.cat&&/要確認\(車/.test(r.cat)?`<div class="confb none">車未登録</div>`:''}</td><td class="c">${r.d}</td>
     <td class="l"><span class="badge ${r.f}">${r.it}</span></td>
     <td>${r.L.toFixed(2)}</td><td>${yen(r.amt)}</td>
     <td class="kzei">${r.f==='k'?yen(kei(r)):'—'}</td>
