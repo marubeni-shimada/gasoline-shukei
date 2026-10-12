@@ -16,10 +16,10 @@
   --kei:#6fb5e6; --keibg:#122634; --yellow:#1c2030; --head:#0f2a22;
 }}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,"Hiragino Kaku Gothic ProN",system-ui,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1aa.6 -apple-system,"Hiragino Kaku Gothic ProN",system-ui,sans-serif}
 .app{max-width:1180px;margin:0 auto;padding:0 16px 70px}
-header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:saturate(1.6) blur(8px);padding:16px 0 0;margin:0 -16px 0;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
-.titlerow{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}a
+header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:saturate(1.6) blur(8px);padding:16px a0 0;margin:0 -16px 0;padding-left:16px;padding-right:16px;border-bottom:1px solid var(--line)}
+.titlerow{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
 h1{font-size:18px;margin:0;letter-spacing:.01em}
 h1 .v{font-size:11px;font-weight:600;color:var(--sub)}
 .titlerow .ctx{font-size:12px;color:var(--sub);margin-left:auto}
@@ -377,7 +377,12 @@ function drawCat(){
   if(!rows.length){ $('catBox').innerHTML='<div class="empty">データがありません</div>'; return; }
   const by=(key)=>{ const g={}; rows.forEach(r=>{ const k=r[key]||'（不明）'; g[k]=(g[k]||0)+r.amt; }); return Object.entries(g).sort((a,b)=>b[1]-a[1]); };
   const tbl=(title,arr)=>{ const tot=arr.reduce((s,x)=>s+x[1],0); return `<div class="card" style="margin-bottom:12px"><h2 style="font-size:13px;margin:0 0 8px">${title}</h2><table style="width:100%"><tbody>`+arr.map(x=>`<tr${/要確認/.test(x[0])?' class="una"':''}><td class="l" style="padding:5px 8px;border-bottom:1px solid var(--line)">${x[0]}</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right"><b>¥${yen(x[1])}</b></td></tr>`).join('')+`<tr><td class="l" style="padding:6px 8px;border-top:2px solid var(--line)"><b>合計</b></td><td style="padding:6px 8px;border-top:2px solid var(--line);text-align:right"><b>¥${yen(tot)}</b></td></tr></tbody></table></div>`; };
-  $('catBox').innerHTML = tbl('カテゴリ別（計上先）', by('cat')) + tbl('部門別', by('dept')) + tbl('人別（管理者）', by('person'));
+  const perG={}; rows.forEach(r=>{ const p=r.person||'（不明）'; if(!perG[p])perG[p]={amt:0,cars:{}}; perG[p].amt+=r.amt; if(r.car&&r.car!=='—')perG[p].cars[r.car]=1; });
+  const perArr=Object.entries(perG).sort((a,b)=>b[1].amt-a[1].amt), perTot=perArr.reduce((s,x)=>s+x[1].amt,0);
+  const perTbl=`<div class="card" style="margin-bottom:12px"><h2 style="font-size:13px;margin:0 0 8px">人別（管理者）</h2><table style="width:100%"><tbody>`
+    +perArr.map(([p,v])=>`<tr${/不明/.test(p)?' class="una"':''}><td class="l" style="padding:5px 8px;border-bottom:1px solid var(--line)">${p}<span class="denpyo" style="margin-left:6px">車 ${Object.keys(v.cars).join('・')||'—'}</span></td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right"><b>¥${yen(v.amt)}</b></td></tr>`).join('')
+    +`<tr><td class="l" style="padding:6px 8px;border-top:2px solid var(--line)"><b>合計</b></td><td style="padding:6px 8px;border-top:2px solid var(--line);text-align:right"><b>¥${yen(perTot)}</b></td></tr></tbody></table></div>`;
+  $('catBox').innerHTML = tbl('カテゴリ別（計上先）', by('cat')) + tbl('部門別', by('dept')) + perTbl;
 }
 function drawMonths(){
   const yms=Object.keys(months).sort();
@@ -526,7 +531,7 @@ $('monthsClear').onclick=()=>{ if(confirm('ためた月別データを全部消�
 $('ymInput').onchange=()=>{ currentYm=$('ymInput').value||currentYm; };
 
 /* ===== 起動時：前回の続きを復元 ===== */
-(function restore(){ const r=lsGet(LS.rate,null); if(r)$('rate').value=r; const saved=lsGet(LS.rows,null); if(saved&&saved.length){ rows=saved; $('ctx').textContent='保存データ（前回の続き）'; showKenzan(null); drawDetail(); drawAgg(); } })();
+(function restore(){ const r=lsGet(LS.rate,null); if(r)$('rate').value=r; const saved=lsGet(LS.rows,null); if(saved&&saved.length){ rows=saved.map(r=>({...carInfo(r.car), ...r, cat:(r.cat&&!/不明|undefined/.test(String(r.cat)))?r.cat:carInfo(r.car).cat, dept:r.dept||carInfo(r.car).dept, person:r.person||carInfo(r.car).person})); $('ctx').textContent='保存データ（前回の続き）'; showKenzan(null); drawDetail(); drawAgg(); } })();
 
 /* 共有（埋め込みGAS）：UIは出さず裏側で同期。起動時に最新を取得 */
 if(gasUrl()) gasLoad();
