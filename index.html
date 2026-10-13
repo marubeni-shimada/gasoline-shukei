@@ -85,6 +85,7 @@ select.una{border-color:var(--alert);color:var(--alert);font-weight:700}
 .denpyo{font-size:10px;color:var(--sub)}
 .confb{display:inline-block;font-size:9.5px;font-weight:800;border-radius:4px;padding:0 5px;margin-left:5px;vertical-align:middle}
 .confb.none{background:var(--line);color:var(--sub)}
+.confb.mid{background:#e8f0fe;color:#1a56db}
 .confb.low{background:var(--alertbg);color:var(--alert)}
 .toolbar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
 .toolbar .muted{font-size:12px;color:var(--sub)}
@@ -312,7 +313,8 @@ const SEP_DOBOKU=[
 const SEP_CHECK={件数:85, 明細合計:350836, お買上税抜:350838, 軽油数量:502.56, 軽油税:7538};
 const KOJI=["要確認","谷口中河線","リニア","駿遠島田","業務スーパー","細江除草","新清水立体","小河内トンネル","横浜冷凍","三永立体","共通(配賦)"];
 let kojiCustom=[];   // 共有(GAS)で足した工事名。ドロップダウンに合流
-function allKoji(){ return KOJI.concat(kojiCustom.filter(k=>k&&KOJI.indexOf(k)<0)); }
+let kojiMaster=[];   // 工事台帳分析のクラウドから取得した実在工事 [{n:工事名, t:担当者}]。照合に使用
+function allKoji(){ const extra=kojiMaster.map(k=>k.n); return KOJI.concat(kojiCustom, extra).filter((k,i,a)=>k&&a.indexOf(k)===i); }
 
 /* ===== 社有車マスタ（車番→所属・管理者）。カテゴリ＝計上先を自動判定 ===== */
 const CARMASTER={
@@ -349,8 +351,34 @@ const rate=()=>parseFloat($('rate').value)||0;
 const kei=r=>(r.f==='k'?r.keiL:0)*rate();
 // keiL補完
 /* 読取の確度：high=確実（自動で工事付与）／low=候補あり不確実／none=読取不可。low・noneは要確認に回す（＝OCRで読めなければ要確認）。実装版Geminiは確度を返す想定、未指定はここで推定 */
-function confOf(r){ if(r.conf) return r.conf; if(r.koji && r.koji!=='要確認') return 'high'; return (r.dp && /[?？]/.test(r.dp)) ? 'low' : 'none'; }
-function norm(r){ const c=confOf(r); const ci=carInfo(r.car); return {...r, keiL:(r.f==='k'?r.L:0), conf:c, koji:(c==='high'?(r.koji||'要確認'):'要確認'), dept:ci.dept, person:ci.person, cat:ci.cat}; }
+function nrm(s){ return (s==null?'':s.toString()).replace(/[\s　（）()]/g,''); }
+/* 自動照合：A=伝票の工事名→正式名(工事マスタ)、A2=伝票名はあるがマスタ外ならそのまま、B=車→管理者→その人が担当の工事(第一候補)。どれも無ければ要確認 */
+/* 給油日(MM/DD＋対象年)が工事の工期内か。工期不明は通す */
+function inKoki(x){ if(!x.s&&!x.f) return true; const d=(currentYm||'').slice(0,4); if(!d) return true; const dt=d+'-'+String(matchDate||'').replace('/','-'); if(dt.length<10) return true; if(x.s&&dt<x.s) return false; if(x.f&&dt>x.f) return false; return true; }
+let matchDate='';   // matchKoji実行中の対象行の日付(工期フィルタ用)
+function matchKoji(r){
+  const raw=(r.rawKoji!=null?r.rawKoji:r.koji);
+  const ci=carInfo(r.car);
+  if(!kojiMaster.length){ return (raw&&raw!=='要確認')?{koji:raw,by:'',conf:'high'}:{koji:'要確認',by:'',conf:(r.dp&&/[?？]/.test(r.dp))?'low':'none'}; }
+  matchDate=r.d||'';
+  // A：伝票の手書き現場名 → 正式名
+  const keys=[]; if(raw&&raw!=='要確認') keys.push(raw);
+  const m=(r.dp||'').match(/(?:伝票|請求書|現場)[/／]?[:：]?([^\(（/／]*)/); if(m&&m[1]&&m[1].trim()) keys.push(m[1].trim());
+  for(const k of keys){ const nk=nrm(k); if(nk.length>=2){ const hit=kojiMaster.find(x=>{const nx=nrm(x.n); return nx&&(nx.indexOf(nk)>=0||nk.indexOf(nx)>=0);}); if(hit) return {koji:hit.n,by:'伝票一致',conf:'high'}; } }
+  if(raw&&raw!=='要確認') return {koji:raw,by:'',conf:'high'};   // 伝票に工事名あり・マスタ外はそのまま確定
+  // B＋C：人（伝票の署名＋車の管理者）→ その人が担当の工事。工期で絞る
+  const names=[]; const sig=((r.dp||'').match(/署名[:：]([^\s　（(]+)/)||[])[1]; if(sig) names.push(sig);
+  if(ci.person && !/[（(]|現場直|共有/.test(ci.person)) names.push(ci.person);
+  if(names.length){
+    let cand=kojiMaster.filter(x=>{const tx=nrm(x.t); return tx && names.some(nm=>{const n=nrm(nm); return n&&(tx.indexOf(n)>=0||n.indexOf(tx)>=0);});});
+    const inr=cand.filter(inKoki); if(inr.length) cand=inr;   // 工期内があればそれに絞る
+    const who=sig||ci.person;
+    if(cand.length===1) return {koji:cand[0].n,by:'担当候補('+who+')',conf:'mid'};
+    if(cand.length>1) return {koji:cand[0].n,by:'担当候補*複数('+who+')',conf:'low'};
+  }
+  return {koji:'要確認',by:'',conf:(r.dp&&/[?？]/.test(r.dp))?'low':'none'};
+}
+function norm(r){ const ci=carInfo(r.car); const raw=(r.rawKoji!=null?r.rawKoji:r.koji); const mm=matchKoji({...r,rawKoji:raw}); return {...r, rawKoji:raw, keiL:(r.f==='k'?r.L:0), conf:mm.conf, koji:(mm.conf==='high'?mm.koji:'要確認'), cand:((mm.conf==='mid'||mm.conf==='low')&&mm.by)?mm.koji:'', candBy:mm.by, dept:ci.dept, person:ci.person, cat:ci.cat}; }
 
 /* ===== 保存・学習（localStorage。端末内。財務データは数値のみ） ===== */
 const LS={cm:'gas_carmaster', rows:'gas_rows', rate:'gas_rate', months:'gas_months'};
@@ -382,6 +410,11 @@ function gasSave(){ const u=gasUrl(); if(!u)return; gasPill('☁ 保存中…','
 function gasLoad(){ const u=gasUrl(); if(!u)return; gasPill('☁ 読込中…','');
   fetch(u).then(r=>r.json()).then(o=>{ if(o&&o.ok&&o.data){ if(o.data.months&&typeof o.data.months==='object'){months=o.data.months;lsSet(LS.months,months);} if(Array.isArray(o.data.kojiList))kojiCustom=o.data.kojiList; gasPill('☁ 共有中（最新）','ok'); drawMonths(); if(rows.length)drawDetail(); } else gasPill('☁ 接続（データなし）',''); }).catch(()=>gasPill('⚠ 接続エラー','bad')); }
 function gasPill(t,cls){ const e=$('gasState'); if(e){ e.style.display=''; e.textContent=t; e.style.color=cls==='ok'?'var(--acc)':cls==='bad'?'var(--alert)':'var(--sub)'; } }
+/* 工事台帳分析のクラウド（GAS）から実在工事（工事名＋担当）を取得＝裏側。取得後に自動照合を再実行 */
+const DAICHO_GAS_URL='https://script.google.com/macros/s/AKfycbyYDuM4nv_p6-y5FtwcaWh30OJF-H0QXyon3Lb7JKZ0V_8RBuidDj5pBBZi7Hk9o313/exec';
+function daichoLoad(){ fetch(DAICHO_GAS_URL).then(r=>r.json()).then(o=>{ const ps=(o&&o.projects)||[]; const km=ps.filter(p=>p&&p.name).map(p=>({n:String(p.name).trim(),t:String(p.tanto||'').replace(/[\s　]/g,''),s:p.start||'',f:p.fin||'',dept:p.dept||''})); if(km.length){ kojiMaster=km; applyAutoMatch(); } }).catch(()=>{}); }
+/* 工事マスタ取得後、手動確定(manual)していない行だけ自動照合をかけ直す */
+function applyAutoMatch(){ if(!kojiMaster.length||!rows.length) return; rows=rows.map(r=>r.manual?r:norm(r)); saveRows(); saveMonth(); drawDetail(); drawAgg(); if(document.getElementById('sub-cat')&&document.getElementById('sub-cat').classList.contains('on')) drawCat(); }
 function drawCat(){
   if(!rows.length){ $('catBox').innerHTML='<div class="empty">データがありません</div>'; return; }
   const by=(key)=>{ const g={}; rows.forEach(r=>{ const k=r[key]||'（不明）'; g[k]=(g[k]||0)+r.amt; }); return Object.entries(g).sort((a,b)=>b[1]-a[1]); };
@@ -480,9 +513,10 @@ function drawDetail(){
     <td class="l"><span class="badge ${r.f}">${r.it}</span></td>
     <td>${r.L.toFixed(2)}</td><td>${yen(r.amt)}</td>
     <td class="kzei">${r.f==='k'?yen(kei(r)):'—'}</td>
-    <td class="l"><select class="${r.koji==='要確認'?'una':''}" data-i="${i}">${allKoji().map(k=>`<option ${k===r.koji?'selected':''}>${k}</option>`).join('')}</select>${r.koji==='要確認'?`<span class="confb ${r.conf}">${r.conf==='none'?'読取不可':'候補あり'}</span>`:''}${r.dp?`<div class="denpyo">${r.dp}</div>`:''}</td></tr>`).join('')
+    <td class="l"><select class="${r.koji==='要確認'?'una':''}" data-i="${i}">${allKoji().map(k=>`<option ${k===r.koji?'selected':''}>${k}</option>`).join('')}</select>${r.koji==='要確認'?(r.cand?`<span class="confb ${r.conf}">候補</span><div class="denpyo" style="color:var(--acc)">💡${r.cand}${r.candBy?`（${r.candBy}）`:''} <button class="adopt" data-i="${i}" style="font:inherit;font-size:10px;padding:1px 7px;border:1px solid var(--acc);color:var(--acc);background:#fff;border-radius:6px;cursor:pointer">採用</button></div>`:`<span class="confb ${r.conf}">${r.conf==='none'?'読取不可':'要確認'}</span>`):''}${r.dp?`<div class="denpyo">${r.dp}</div>`:''}</td></tr>`).join('')
     || '<tr><td colspan="7" class="empty">該当なし</td></tr>';
-  $('tb').querySelectorAll('select').forEach(s=>s.onchange=()=>{const i=+s.dataset.i;rows[i].koji=s.value;saveRows();saveMonth();drawDetail();updateCounts();drawAgg();});
+  $('tb').querySelectorAll('select').forEach(s=>s.onchange=()=>{const i=+s.dataset.i;rows[i].koji=s.value;rows[i].manual=true;rows[i].conf=(s.value==='要確認')?'none':'high';rows[i].cand='';saveRows();saveMonth();drawDetail();updateCounts();drawAgg();});
+  $('tb').querySelectorAll('.adopt').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;rows[i].koji=rows[i].cand;rows[i].manual=true;rows[i].conf='high';rows[i].cand='';saveRows();saveMonth();drawDetail();updateCounts();drawAgg();});
   updateCounts();
 }
 function updateCounts(){
@@ -549,6 +583,8 @@ $('ymInput').onchange=()=>{ currentYm=$('ymInput').value||currentYm; setYmBadge(
 
 /* 共有（埋め込みGAS）：UIは出さず裏側で同期。起動時に最新を取得 */
 if(gasUrl()) gasLoad();
+/* 工事台帳のクラウドから実在工事を取得して自動照合（裏側・UIなし） */
+daichoLoad();
 </script>
 </body>
 </html>
