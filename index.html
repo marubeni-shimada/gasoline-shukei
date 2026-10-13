@@ -122,7 +122,7 @@ select.una{border-color:var(--alert);color:var(--alert);font-weight:700}
 <body>
 <div class="app">
   <header>
-    <div class="titlerow"><h1>ガソリン集計システム <span class="v">v0.2</span></h1><span id="ymBadge" style="display:none;margin-left:12px;padding:4px 12px;border-radius:999px;background:var(--accent,#2563eb);color:#fff;font-size:13px;font-weight:700;white-space:nowrap"></span><span class="ctx" id="ctx">大塚石油 / どっと原価むけ</span></div>
+    <div class="titlerow"><h1>ガソリン集計システム <span class="v">v0.2</span></h1><span id="ymBadge" style="display:none;margin-left:12px;padding:4px 12px;border-radius:999px;background:var(--accent,#2563eb);color:#fff;font-size:13px;font-weight:700;white-space:nowrap"></span><select id="monthSel" title="表示する月を切り替え" style="display:none;margin-left:8px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font:inherit;font-size:12px"></select><span class="ctx" id="ctx">大塚石油 / どっと原価むけ</span></div>
     <div class="steps" id="steps">
       <button data-tab="t1" class="on"><span class="n">1</span>書類アップロード</button>
       <button data-tab="t2"><span class="n">2</span>解析・工事割当 <span class="chip" id="chipNeed" style="display:none"></span></button>
@@ -381,11 +381,17 @@ function matchKoji(r){
 function norm(r){ const ci=carInfo(r.car); const raw=(r.rawKoji!=null?r.rawKoji:r.koji); const mm=matchKoji({...r,rawKoji:raw}); return {...r, rawKoji:raw, keiL:(r.f==='k'?r.L:0), conf:mm.conf, koji:(mm.conf==='high'?mm.koji:'要確認'), cand:((mm.conf==='mid'||mm.conf==='low')&&mm.by)?mm.koji:'', candBy:mm.by, dept:ci.dept, person:ci.person, cat:ci.cat}; }
 
 /* ===== 保存・学習（localStorage。端末内。財務データは数値のみ） ===== */
-const LS={cm:'gas_carmaster', rows:'gas_rows', rate:'gas_rate', months:'gas_months'};
+const LS={cm:'gas_carmaster', rows:'gas_rows', rate:'gas_rate', months:'gas_months', rbm:'gas_rows_by_month'};
+let rowsByMonth=lsGet('gas_rows_by_month',{});   // 月別の明細(rows)を保持＝月セレクタで切替
+let sampleMode=false;   // サンプル表示中は月別保存しない
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 // 車→工事の学習は廃止：工事は伝票の手書きで給油ごとに決まり、車には紐づかない（同じ車が複数工事へ）ため。突合用の車番・日付・数量は保持。
-function saveRows(){lsSet(LS.rows,rows);}
+function saveRows(){ lsSet(LS.rows,rows); if(!sampleMode && /^\d{4}-\d{2}$/.test(currentYm)){ rowsByMonth[currentYm]=rows; lsSet(LS.rbm,rowsByMonth); } }
+/* 月セレクタ：取り込んだ月を切り替えてその月の明細・集計を見る */
+function monthsAvail(){ return Object.keys(rowsByMonth).filter(k=>/^\d{4}-\d{2}$/.test(k)).sort(); }
+function drawMonthSel(){ const el=$('monthSel'); if(!el)return; const ms=monthsAvail(); if(ms.length<=1){ el.style.display='none'; return; } el.innerHTML=ms.map(m=>`<option value="${m}" ${m===currentYm?'selected':''}>${m.slice(0,4)}年${parseInt(m.slice(5),10)}月分</option>`).join(''); el.style.display=''; }
+function selectMonth(ym){ if(!rowsByMonth[ym])return; sampleMode=false; currentYm=ym; rows=rowsByMonth[ym]; lsSet(LS.rows,rows); if($('ymInput'))$('ymInput').value=ym; setYmBadge(ym); $('ctx').textContent='大塚石油 '+ym.slice(0,4)+'/'+parseInt(ym.slice(5),10); showKenzan(null); drawDetail(); drawAgg(); drawMonthSel(); }
 /* 月別集計：処理した月を {年月:{工事:{tax,kei}}} でためる */
 let months=lsGet(LS.months,{});
 let currentYm='2026-09';
@@ -465,9 +471,10 @@ $('analyzeBtn').onclick=()=>{
 $('demoBtn').onclick=loadDemo;
 $('sampleBtn').onclick=loadSample;
 function loadDataset(data, opt){
+  sampleMode=!!opt.sample;
   rows=data.map(norm);
-  saveRows();
-  if(!opt.sample){ const dy=(opt.ym&&/^\d{4}-\d{2}$/.test(opt.ym))?opt.ym:detectYm(data); currentYm=dy||(($('ymInput')||{}).value)||currentYm; if($('ymInput'))$('ymInput').value=currentYm; setYmBadge(currentYm); saveMonth(); }   // 請求書の対象年月(opt.ym)を優先・無ければ行の日付から判定
+  if(!opt.sample){ const dy=(opt.ym&&/^\d{4}-\d{2}$/.test(opt.ym))?opt.ym:detectYm(data); currentYm=dy||(($('ymInput')||{}).value)||currentYm; if($('ymInput'))$('ymInput').value=currentYm; setYmBadge(currentYm); saveRows(); saveMonth(); drawMonthSel(); }   // 請求書の対象年月(opt.ym)を優先・無ければ行の日付から判定。月別に保存してセレクタ更新
+  else { saveRows(); }
   $('ctx').textContent=opt.ctx;
   if(opt.sample) showSampleNote(); else showKenzan(opt.check);
   drawDetail(); drawAgg();
@@ -576,10 +583,11 @@ $('importBtn').onclick=()=>{
 
 /* 月別データのクリア・対象年月 */
 $('monthsClear').onclick=()=>{ if(confirm('ためた月別データを全部消しますか？')){ months={}; lsSet(LS.months,months); drawMonths(); } };
-$('ymInput').onchange=()=>{ currentYm=$('ymInput').value||currentYm; setYmBadge(currentYm); if(rows.length)saveMonth(); };
+$('ymInput').onchange=()=>{ currentYm=$('ymInput').value||currentYm; setYmBadge(currentYm); if(rows.length){saveRows();saveMonth();drawMonthSel();} };
+if($('monthSel')) $('monthSel').onchange=()=>selectMonth($('monthSel').value);
 
 /* ===== 起動時：前回の続きを復元 ===== */
-(function restore(){ const r=lsGet(LS.rate,null); if(r)$('rate').value=r; const saved=lsGet(LS.rows,null); if(saved&&saved.length){ rows=saved.map(r=>({...carInfo(r.car), ...r, cat:(r.cat&&!/不明|undefined/.test(String(r.cat)))?r.cat:carInfo(r.car).cat, dept:r.dept||carInfo(r.car).dept, person:r.person||carInfo(r.car).person})); $('ctx').textContent='保存データ（前回の続き）'; const ry=detectYm(rows); if(ry){currentYm=ry; if($('ymInput'))$('ymInput').value=ry;} setYmBadge(currentYm); showKenzan(null); drawDetail(); drawAgg(); } })();
+(function restore(){ const r=lsGet(LS.rate,null); if(r)$('rate').value=r; const saved=lsGet(LS.rows,null); if(saved&&saved.length){ rows=saved.map(r=>({...carInfo(r.car), ...r, cat:(r.cat&&!/不明|undefined/.test(String(r.cat)))?r.cat:carInfo(r.car).cat, dept:r.dept||carInfo(r.car).dept, person:r.person||carInfo(r.car).person})); $('ctx').textContent='保存データ（前回の続き）'; const ry=detectYm(rows); if(ry){currentYm=ry; if($('ymInput'))$('ymInput').value=ry;} setYmBadge(currentYm); showKenzan(null); drawDetail(); drawAgg(); } if(!Object.keys(rowsByMonth).length && rows.length && /^\d{4}-\d{2}$/.test(currentYm)){ rowsByMonth[currentYm]=rows; lsSet(LS.rbm,rowsByMonth); } drawMonthSel(); })();
 
 /* 共有（埋め込みGAS）：UIは出さず裏側で同期。起動時に最新を取得 */
 if(gasUrl()) gasLoad();
